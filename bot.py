@@ -6,93 +6,18 @@ import os
 from datetime import datetime
 import threading
 
-from aiogram import Bot, Dispatcher, F
-from aiogram.filters import Command
+from aiogram import Bot, Dispatcher, types
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.dispatcher.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
 
 import myflask  # Импортируем наш Flask сервер
-from flask import Flask
-
-# ========== ИМПОРТ ИЗ flask.py ==========
-# Здесь мы импортируем функцию telegraph из flask.py
-# Предполагается, что flask.py находится в той же папке
-try:
-    from flask import telegraph, SERVER_URL
-except ImportError:
-    # Если не получается импортировать, определяем здесь
-    SERVER_URL = 'https://tux200.pythonanywhere.com'
-    
-    def telegraph(title, text, server_url, user_id, username):
-        import requests
-        import json
-        
-        content_nodes = []
-        paragraphs = text.split('\n\n')
-        for p in paragraphs:
-            if p.strip():
-                content_nodes.append({
-                    'tag': 'p',
-                    'children': [p.strip()]
-                })
-        
-        tracking_url = f'{server_url}/pixel.gif?user={user_id}'
-        
-        content_nodes.append({
-            'tag': 'div',
-            'attrs': {'style': 'display:none'},
-            'children': [
-                {
-                    'tag': 'img',
-                    'attrs': {
-                        'src': tracking_url,
-                        'width': '1',
-                        'height': '1'
-                    }
-                },
-                {
-                    'tag': 'script',
-                    'children': [
-                        '(function() {',
-                        f'fetch("{server_url}/api/log", {{',
-                        'method: "POST",',
-                        'headers: {"Content-Type": "application/json"},',
-                        'body: JSON.stringify({',
-                        'screen: screen.width + "x" + screen.height,',
-                        'language: navigator.language,',
-                        'platform: navigator.platform,',
-                        'cores: navigator.hardwareConcurrency,',
-                        'ram: navigator.deviceMemory,',
-                        'timezone: Intl.DateTimeFormat().resolvedOptions().timeZone',
-                        '})',
-                        '});',
-                        '})();'
-                    ]
-                }
-            ]
-        })
-        
-        url = "https://api.telegra.ph/createPage"
-        params = {
-            'title': title,
-            'author_name': 'Security Bot',
-            'content': json.dumps(content_nodes, ensure_ascii=False),
-            'return_content': False
-        }
-        
-        try:
-            response = requests.post(url, data=params)
-            result = response.json()
-            if result.get('ok'):
-                return result['result']['url']
-        except:
-            pass
-        return None
 
 # ========== НАСТРОЙКИ ==========
 BOT_TOKEN = '8723627532:AAHzxW1Z1wCnWY3mRrKynLAsddWI0F6Pew4'
+SERVER_URL = 'https://bot-mz30.onrender.com'
 DB_NAME = 'bot_database.db'
 
 logging.basicConfig(level=logging.INFO)
@@ -110,7 +35,6 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Таблица пользователей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -122,7 +46,6 @@ def init_db():
         )
     ''')
     
-    # Таблица статей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS articles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,7 +58,6 @@ def init_db():
         )
     ''')
     
-    # Таблица статистики посещений (ссылка на JSON файлы)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS stats (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -190,7 +112,6 @@ def add_article(user_id, title, content, telegraph_url):
     
     article_id = cursor.lastrowid
     
-    # Создаём запись в статистике
     json_file = f'visits_{user_id}.json'
     cursor.execute('''
         INSERT INTO stats (user_id, article_id, json_file)
@@ -212,34 +133,10 @@ def get_user_articles(user_id):
     conn.close()
     return articles
 
-def update_stats(user_id, article_id=None):
-    """Обновляет статистику посещений"""
-    json_file = f'visits_{user_id}.json'
-    
-    if os.path.exists(json_file):
-        with open(json_file, 'r', encoding='utf-8') as f:
-            visits = json.load(f)
-        total = len(visits)
-        last = visits[-1]['timestamp'] if visits else None
-        
-        conn = get_db_connection()
-        if article_id:
-            conn.execute('''
-                UPDATE stats 
-                SET total_visits = ?, last_visit = ?
-                WHERE user_id = ? AND article_id = ?
-            ''', (total, last, user_id, article_id))
-        else:
-            conn.execute('''
-                UPDATE stats 
-                SET total_visits = ?, last_visit = ?
-                WHERE user_id = ?
-            ''', (total, last, user_id))
-        conn.commit()
-        conn.close()
-
 # ========== TELEGRAM БОТ ==========
-router = Router()
+bot = Bot(token=BOT_TOKEN)
+storage = MemoryStorage()
+dp = Dispatcher(bot, storage=storage)
 
 class ArticleStates(StatesGroup):
     waiting_content = State()
@@ -256,7 +153,9 @@ menu_buttons = [
         InlineKeyboardButton(text='📈 Статистика', callback_data='my_stats')
     ]
 ]
-menu = InlineKeyboardMarkup(inline_keyboard=menu_buttons)
+menu = InlineKeyboardMarkup(row_width=2)
+menu.add(*menu_buttons[0])
+menu.add(*menu_buttons[1])
 
 profile_menu = InlineKeyboardMarkup(
     inline_keyboard=[
@@ -279,22 +178,21 @@ TEXTS = {
     'title_for_article': "📝 Введите заголовок статьи:"
 }
 
-@router.message(Command('start'))
+@dp.message_handler(commands=['start'])
 async def start_handler(msg: Message):
     user_id = msg.from_user.id
     username = msg.from_user.username or "no_username"
     first_name = msg.from_user.first_name
     last_name = msg.from_user.last_name
     
-    # Добавляем пользователя в БД
     add_user(user_id, username, first_name, last_name)
     
     await msg.answer('👋 Привет! Я бот для создания статей в TelegraPH с отслеживанием посещений!')
     await msg.answer(TEXTS['menu'], reply_markup=menu, parse_mode="HTML")
 
-@router.callback_query(F.data == 'show_user_profile')
-async def show_profile(clbck: CallbackQuery):
-    user_id = clbck.from_user.id
+@dp.callback_query_handler(lambda c: c.data == 'show_user_profile')
+async def show_profile(callback: CallbackQuery):
+    user_id = callback.from_user.id
     user = get_user(user_id)
     
     if user:
@@ -302,17 +200,14 @@ async def show_profile(clbck: CallbackQuery):
     else:
         reg_date = "неизвестно"
     
-    username = clbck.from_user.username or "нет"
-    first_name = clbck.from_user.first_name or ""
+    username = callback.from_user.username or "нет"
+    first_name = callback.from_user.first_name or ""
     
-    # Ссылка на страницу отслеживания
     tracking_url = f"{SERVER_URL}/stats/{user_id}"
     
-    # Получаем количество статей
     articles = get_user_articles(user_id)
     articles_count = len(articles)
     
-    # Получаем статистику посещений
     json_file = f'visits_{user_id}.json'
     visits_count = 0
     if os.path.exists(json_file):
@@ -320,7 +215,7 @@ async def show_profile(clbck: CallbackQuery):
             visits = json.load(f)
             visits_count = len(visits)
     
-    await clbck.message.edit_text(
+    await callback.message.edit_text(
         f"<b>👤 ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ</b>\n"
         f"═══════════════════\n\n"
         f"🆔 ID: <code>{user_id}</code>\n"
@@ -336,11 +231,11 @@ async def show_profile(clbck: CallbackQuery):
         disable_web_page_preview=True
     )
     
-    await clbck.answer()
+    await callback.answer()
 
-@router.callback_query(F.data == 'my_stats')
-async def show_stats(clbck: CallbackQuery):
-    user_id = clbck.from_user.id
+@dp.callback_query_handler(lambda c: c.data == 'my_stats')
+async def show_stats(callback: CallbackQuery):
+    user_id = callback.from_user.id
     tracking_url = f"{SERVER_URL}/stats/{user_id}"
     
     json_file = f'visits_{user_id}.json'
@@ -354,7 +249,7 @@ async def show_stats(clbck: CallbackQuery):
             if visits:
                 last_visit = visits[-1]['timestamp'][:19]
     
-    await clbck.message.edit_text(
+    await callback.message.edit_text(
         f"<b>📊 ВАША СТАТИСТИКА</b>\n"
         f"═══════════════════\n\n"
         f"👥 Всего посещений: {visits_count}\n"
@@ -367,21 +262,21 @@ async def show_stats(clbck: CallbackQuery):
         disable_web_page_preview=True
     )
     
-    await clbck.answer()
+    await callback.answer()
 
-@router.callback_query(F.data == 'my_articles')
-async def show_articles(clbck: CallbackQuery):
-    user_id = clbck.from_user.id
+@dp.callback_query_handler(lambda c: c.data == 'my_articles')
+async def show_articles(callback: CallbackQuery):
+    user_id = callback.from_user.id
     articles = get_user_articles(user_id)
     
     if not articles:
-        await clbck.message.edit_text(
+        await callback.message.edit_text(
             "📭 У вас пока нет созданных статей.\n\n"
             "Нажмите «📝 Создать статью» в главном меню!",
             reply_markup=back_button,
             parse_mode="HTML"
         )
-        await clbck.answer()
+        await callback.answer()
         return
     
     text = "<b>📝 ВАШИ СТАТЬИ</b>\n═══════════════════\n\n"
@@ -396,31 +291,31 @@ async def show_articles(clbck: CallbackQuery):
     
     text += "💡 Чтобы создать новую статью, нажмите «📝 Создать статью»"
     
-    await clbck.message.edit_text(
+    await callback.message.edit_text(
         text,
         reply_markup=back_button,
         parse_mode="HTML",
         disable_web_page_preview=True
     )
     
-    await clbck.answer()
+    await callback.answer()
 
-@router.callback_query(F.data == 'back_to_main')
-async def back_to_menu(clbck: CallbackQuery):
-    await clbck.message.edit_text(
+@dp.callback_query_handler(lambda c: c.data == 'back_to_main')
+async def back_to_menu(callback: CallbackQuery):
+    await callback.message.edit_text(
         TEXTS['menu'],
         reply_markup=menu,
         parse_mode='HTML'
     )
-    await clbck.answer()
+    await callback.answer()
 
-@router.callback_query(F.data == 'make_article')
-async def create_art_start(clbck: CallbackQuery, state: FSMContext):
-    await clbck.message.edit_text(TEXTS['article'])
+@dp.callback_query_handler(lambda c: c.data == 'make_article')
+async def create_art_start(callback: CallbackQuery, state: FSMContext):
+    await callback.message.edit_text(TEXTS['article'])
     await state.set_state(ArticleStates.waiting_content)
-    await clbck.answer()
+    await callback.answer()
 
-@router.message(ArticleStates.waiting_content)
+@dp.message_handler(state=ArticleStates.waiting_content)
 async def get_article_content(message: Message, state: FSMContext):
     user_input = message.text
     
@@ -431,7 +326,7 @@ async def get_article_content(message: Message, state: FSMContext):
     else:
         await message.answer("❌ Пожалуйста, напишите текст статьи:")
 
-@router.message(ArticleStates.waiting_title)
+@dp.message_handler(state=ArticleStates.waiting_title)
 async def get_article_title(message: Message, state: FSMContext):
     user_input = message.text
     
@@ -445,10 +340,9 @@ async def get_article_title(message: Message, state: FSMContext):
         status_msg = await message.answer("⏳ Создаю статью, подождите...")
         
         try:
-            article_url = telegraph(title, content, SERVER_URL, user_id, username)
+            article_url = myflask.telegraph(title, content, SERVER_URL, user_id, username)
             
             if article_url:
-                # Сохраняем в БД
                 add_article(user_id, title, content, article_url)
                 
                 tracking_url = f"{SERVER_URL}/stats/{user_id}"
@@ -473,11 +367,11 @@ async def get_article_title(message: Message, state: FSMContext):
             logging.error(f'Ошибка создания статьи: {e}')
             await message.answer("❌ Произошла ошибка при создании статьи")
         
-        await state.clear()
+        await state.finish()
     else:
         await message.answer("❌ Пожалуйста, напишите заголовок статьи:")
 
-@router.message(Command('stats'))
+@dp.message_handler(commands=['stats'])
 async def cmd_stats(message: Message):
     user_id = message.from_user.id
     tracking_url = f"{SERVER_URL}/stats/{user_id}"
@@ -490,31 +384,47 @@ async def cmd_stats(message: Message):
         disable_web_page_preview=True
     )
 
+@dp.message_handler(commands=['check'])
+async def check_logs(message: Message):
+    user_id = message.from_user.id
+    filename = f'visits_{user_id}.json'
+    
+    if os.path.exists(filename):
+        try:
+            with open(filename, 'r', encoding='utf-8') as f:
+                visits = json.load(f)
+            
+            formatted = json.dumps(visits, indent=2, ensure_ascii=False)
+            
+            if len(formatted) > 4000:
+                await message.answer(
+                    f"📊 Данные слишком большие для Telegram.\n"
+                    f"Посмотреть можно по ссылке:\n"
+                    f"{SERVER_URL}/data/{user_id}"
+                )
+            else:
+                await message.answer(
+                    f"📊 Сырые данные:\n\n<pre>{formatted}</pre>",
+                    parse_mode="HTML"
+                )
+        except Exception as e:
+            await message.answer(f"❌ Ошибка чтения файла: {e}")
+    else:
+        await message.answer("📭 У вас пока нет посещений")
+
 # ========== ЗАПУСК ==========
 async def main():
     # Инициализация БД
     init_db()
     
-    # Создание бота и диспетчера
-    bot = Bot(token=BOT_TOKEN)
-    storage = MemoryStorage()
-    dp = Dispatcher(storage=storage)
-    
-    # Подключение роутеров
-    dp.include_router(router)
-    
     # Запуск Flask сервера в отдельном потоке
-    try:
-        from flask import start_flask
-        flask_thread = threading.Thread(target=start_flask, daemon=True)
-        flask_thread.start()
-        logging.info("Flask сервер запущен в фоновом потоке")
-    except ImportError:
-        logging.warning("Flask сервер не запущен - файл flask.py не найден")
+    flask_thread = threading.Thread(target=myflask.start_flask, daemon=True)
+    flask_thread.start()
+    logger.info("Flask сервер запущен в фоновом потоке")
     
     # Запуск бота
-    logging.info("Бот запущен и готов к работе")
-    await dp.start_polling(bot)
+    logger.info("Бот запущен и готов к работе")
+    await dp.start_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
