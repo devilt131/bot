@@ -1,0 +1,8 @@
+<< EOF
+__pycache__/
+*.pyc
+venv/
+.env
+*.db
+*.json
+EOF
