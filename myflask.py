@@ -12,7 +12,7 @@ pending_js_data = {}
 user_articles = {}  # {user_id: {'url': article_url, 'username': username}}
 users_data = {}  # {user_id: username}
 
-# HTML шаблон для страницы статистики
+# HTML шаблон для страницы статистики (БЕЛЫЙ ФОН, ЧЁРНЫЙ ТЕКСТ)
 STATS_TEMPLATE = '''
 <!DOCTYPE html>
 <html lang="ru">
@@ -22,22 +22,21 @@ STATS_TEMPLATE = '''
     <title>Статистика посещений</title>
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: Arial, sans-serif;
+            background: white;
             margin: 0;
             padding: 20px;
-            min-height: 100vh;
+            color: black;
         }
         .container {
             max-width: 1400px;
             margin: 0 auto;
         }
         h1 {
-            color: white;
+            color: black;
             text-align: center;
             margin-bottom: 30px;
             font-size: 2.5em;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
         }
         .users-grid {
             display: grid;
@@ -46,10 +45,10 @@ STATS_TEMPLATE = '''
             margin-bottom: 30px;
         }
         .user-card {
-            background: white;
-            border-radius: 15px;
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 5px;
             padding: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
         }
         .user-header {
             display: flex;
@@ -57,26 +56,26 @@ STATS_TEMPLATE = '''
             align-items: center;
             margin-bottom: 15px;
             padding-bottom: 10px;
-            border-bottom: 3px solid #667eea;
+            border-bottom: 2px solid #ccc;
         }
         .user-name {
             font-size: 1.3em;
             font-weight: bold;
-            color: #333;
+            color: black;
         }
         .user-id {
-            background: #667eea;
-            color: white;
+            background: #e0e0e0;
+            color: black;
             padding: 5px 12px;
-            border-radius: 20px;
+            border-radius: 3px;
             font-size: 0.8em;
             font-family: monospace;
         }
         .stats-count {
-            background: #764ba2;
-            color: white;
+            background: #e0e0e0;
+            color: black;
             padding: 3px 10px;
-            border-radius: 20px;
+            border-radius: 3px;
             font-size: 0.8em;
             margin-left: 10px;
         }
@@ -87,13 +86,13 @@ STATS_TEMPLATE = '''
             margin-top: 15px;
         }
         .stat-card {
-            background: #f8f9fa;
-            border-radius: 10px;
+            background: #fafafa;
+            border: 1px solid #eee;
+            border-radius: 3px;
             padding: 15px;
-            border-left: 4px solid #667eea;
         }
         .stat-time {
-            color: #667eea;
+            color: #333;
             font-weight: bold;
             font-size: 0.85em;
             margin-bottom: 8px;
@@ -105,37 +104,37 @@ STATS_TEMPLATE = '''
         }
         .stat-label {
             width: 90px;
-            color: #666;
+            color: #555;
         }
         .stat-value {
             flex: 1;
-            color: #333;
+            color: black;
             font-weight: 500;
         }
         .yandex-map-link {
             display: inline-block;
-            background: #ffcc00;
-            color: #333;
+            background: #f0f0f0;
+            color: black;
             padding: 5px 12px;
-            border-radius: 20px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
             text-decoration: none;
             font-size: 0.85em;
             font-weight: bold;
             margin-top: 5px;
-            transition: background 0.3s;
         }
         .yandex-map-link:hover {
-            background: #ffdb4d;
+            background: #e0e0e0;
         }
         .no-data {
             text-align: center;
-            color: #999;
+            color: #666;
             padding: 20px;
             font-style: italic;
         }
         .footer {
             text-align: center;
-            color: rgba(255,255,255,0.8);
+            color: #666;
             margin-top: 30px;
             font-size: 0.9em;
         }
@@ -157,7 +156,7 @@ STATS_TEMPLATE = '''
                 <div style="margin-bottom: 10px;">
                     <span class="stats-count">Всего посещений: {{ user_data.visits|length }}</span>
                     {% if user_data.article_url %}
-                    <a href="{{ user_data.article_url }}" target="_blank" style="float: right; color: #667eea;">🔗 Статья</a>
+                    <a href="{{ user_data.article_url }}" target="_blank" style="float: right; color: black;">🔗 Статья</a>
                     {% endif %}
                 </div>
                 
